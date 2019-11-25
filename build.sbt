@@ -71,7 +71,7 @@ lazy val `kamon-scala-future` = (project in file("kamon-scala-future"))
       testScope(scalatest, kamonTestkit, logbackClassic))
 
 lazy val `kamon-cats-io` = (project in file("kamon-cats-io"))
-  .enablePlugins(JavaAgent)
+  .dependsOn(`kamon-scala-future`)
   .settings(bintrayPackage := "kamon-futures")
   .settings(instrumentationSettings)
   .settings(
