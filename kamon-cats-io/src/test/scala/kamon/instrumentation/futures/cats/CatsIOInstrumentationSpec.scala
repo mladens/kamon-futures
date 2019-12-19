@@ -23,20 +23,17 @@ class CatsIoInstrumentationSpec extends WordSpec with ScalaFutures with Matchers
   //       kamon-executors module should take care of all non-JDK Runnable/Callable implementations.
 
   def store(tag: String, value: String) = {
-    println(s"storing on ${Thread.currentThread().getId}")
     Kamon.storeContext(Context.of(tag, value))
   }
   def get(tag: String): Option[String] = {
-    val value = Kamon.currentContext().getTag(Lookups.option(tag))
-    println(s"getting from ${Thread.currentThread().getId}  ${value}")
-    value
+    Kamon.currentContext().getTag(Lookups.option(tag))
   }
 
 
   "Instrumentation" should {
-    "propagate context" which {
+    "propagate context" when {
 
-      "chain IOs" in {
+      "fmap IO" in {
         val passThroughTag = for {
           _   <- IO(store("tag", "value"))
           tag <- IO(get("tag"))
@@ -44,7 +41,7 @@ class CatsIoInstrumentationSpec extends WordSpec with ScalaFutures with Matchers
         passThroughTag.unsafeRunSync() shouldBe Some("value")
       }
 
-      "chain IOs with shift" in {
+      "fmap IO with shift" in {
         val newEc: ExecutionContext =
           ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
 
@@ -56,20 +53,20 @@ class CatsIoInstrumentationSpec extends WordSpec with ScalaFutures with Matchers
         passThroughTag.unsafeRunSync() shouldBe Some("value1")
       }
 
-      "chain IOs with multiple shifts" in {
+      "fmap IOs with multiple shifts" in {
         val newEc: ExecutionContext =
           ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
         val newEc2: ExecutionContext =
           ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
 
         val passThroughTag = for {
-          _   <- IO(store("tag1", "value1"))
+          _   <- IO(store("tag2", "value2"))
           _   <- IO.shift(newEc)
-          _   <- IO(get("tag1"))
+          _   <- IO(get("tag2"))
           _   <- IO.shift(newEc2)
-          tag <- IO(get("tag1"))
+          tag <- IO(get("tag2"))
         } yield tag
-        passThroughTag.unsafeRunSync() shouldBe Some("value1")
+        passThroughTag.unsafeRunSync() shouldBe Some("value2")
       }
 
 
@@ -100,12 +97,15 @@ class CatsIoInstrumentationSpec extends WordSpec with ScalaFutures with Matchers
         passThroughTag.unsafeRunSync() shouldBe Some("value4")
       }
 
+      //TODO have tests with completed futures, units, failures...
+
       //TODO, when future is unpacked, it should apply it to surrounding IO
       "Future -> IO" in {
         val fExecutor = ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
 
         def futureWithContext = Future {
           store("tag5", "value5")
+          Thread.sleep(500)
         }(fExecutor)
 
         val passThroughTag = for {
@@ -116,30 +116,50 @@ class CatsIoInstrumentationSpec extends WordSpec with ScalaFutures with Matchers
         passThroughTag.unsafeRunSync() shouldBe Some("value5")
       }
 
-      "IO -> Future" in {
+      "Future -> IO.async" in {
         val fExecutor = ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
 
-        def futureOfContextTagValue = Future {
-          get("tag6")
+        def futureWithContext = Future {
+          store("tag6", "value6")
+          //Thread.sleep(2000)
         }(fExecutor)
 
         val passThroughTag = for {
-          _   <- IO(store("tag6", "value6"))
-          tag <- IO.fromFuture(IO(futureOfContextTagValue))
+          _   <- IO.fromFuture(IO(futureWithContext))
+          _   <- IO.async[Unit](cb => {
+            Thread.sleep(1000)
+            cb(Right(()))
+          })
+          tag <- IO(get("tag6"))
         } yield tag
 
         passThroughTag.unsafeRunSync() shouldBe Some("value6")
       }
 
 
+      "IO -> Future" in {
+        val fExecutor = ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
+
+        def futureOfContextTagValue = Future {
+          get("tag7")
+        }(fExecutor)
+
+        val passThroughTag = for {
+          _   <- IO(store("tag7", "value7"))
+          tag <- IO.fromFuture(IO(futureOfContextTagValue))
+        } yield tag
+
+        passThroughTag.unsafeRunSync() shouldBe Some("value7")
+      }
+
       "sleep" in {
         val timer = IO.timer(ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor()))
         val passThroughTag = for {
-          _   <- IO(store("tag", "value"))
+          _   <- IO(store("tag8", "value8"))
           _   <- IO.sleep(1.milli)(timer)
-          tag <- IO(get("tag"))
+          tag <- IO(get("tag8"))
         } yield tag
-        passThroughTag.unsafeRunSync() shouldBe Some("value")
+        passThroughTag.unsafeRunSync() shouldBe Some("value8")
       }
 
     }
