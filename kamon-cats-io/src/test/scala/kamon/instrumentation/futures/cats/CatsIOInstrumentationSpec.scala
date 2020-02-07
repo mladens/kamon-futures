@@ -162,6 +162,43 @@ class CatsIoInstrumentationSpec extends WordSpec with ScalaFutures with Matchers
         passThroughTag.unsafeRunSync() shouldBe Some("value8")
       }
 
+      "sleepdasdas" in {
+        val timer = IO.timer(ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor()))
+        val passThroughTag = for {
+          _   <- IO(store("tag8", "value8"))
+          _   <- IO.sleep(1000.milli)(timer)
+          tag <- IO(get("tag8"))
+        } yield tag
+        passThroughTag.unsafeRunSync() shouldBe Some("value8")
+      }
+
+
+
+      "parseq" in {
+        import cats.data.NonEmptyList
+        import cats.effect.{ContextShift, Timer, IO}
+        import cats.syntax.parallel._
+
+
+        // Needed for IO.start to do a logical thread fork
+        implicit val cs: ContextShift[IO] = IO.contextShift(ExecutionContext.global)
+
+
+        def printContext = {
+          val s = s"FROM WITHING ${Thread.currentThread().getId}    ${get("tag9")}"
+          println(s)
+          s
+        }
+        val timer = IO.timer(ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor()))
+        val passThroughTag = for {
+          _   <- IO(store("tag9", "value9"))
+          _   <- NonEmptyList.of(IO(println(printContext)),IO(println(printContext)),IO(println(printContext)),IO(println(printContext))).parSequence_
+          tag <- IO(get("tag9"))
+        } yield tag
+
+        passThroughTag.unsafeRunSync() shouldBe Some("value9")
+      }
+
     }
   }
 
